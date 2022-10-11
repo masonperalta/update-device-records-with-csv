@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import os
 import requests
 import sys
@@ -17,6 +18,7 @@ def init_vars():
     jss_url = os.environ.get("JSS")
     jss_api_user = os.environ.get("JSSUSER")
     jss_api_pw = os.environ.get("JSSPASS")
+    eaname = os.environ.get("EANAME")
     server_type = os.environ.get("SERVERTYPE")
     home = str(Path.home())
     if server_type == "windows":
@@ -27,10 +29,8 @@ def init_vars():
         output_main_path = f"{home}/JamfAPI-Update-MobileDevices/"
         output_log_folder_path = f"{output_main_path}/Logs/"
         csv_file_path = f"{output_main_path}/serial_numbers.csv"
-    set_debug_mode_tf = True
-    set_test_mode_tf = False
     logging_level = "debug"
-    return jss_url, jss_api_user, jss_api_pw, output_main_path, output_log_folder_path, csv_file_path, set_debug_mode_tf, set_test_mode_tf, logging_level
+    return jss_url, jss_api_user, jss_api_pw, eaname, output_main_path, output_log_folder_path, csv_file_path, logging_level
 
 
 def generate_auth_token():
@@ -106,7 +106,7 @@ def now_date_time():
     return now_formatted
 
 
-def script_duration(start_or_stop, number_of_devices_updated):
+def script_duration(start_or_stop, number_of_devices_updated, number_of_update_errors):
     # this function calculates script duration
     days = 0; hours = 0; mins = 0; secs = 0
     global start_script_epoch
@@ -136,7 +136,7 @@ def script_duration(start_or_stop, number_of_devices_updated):
         else:
             secs = int(script_duration_in_seconds)
 
-        logging.info(f"\n\n\n---------------\nSUCCESS: script completed! Mobile device records updated [{number_of_devices_updated}]")
+        logging.info(f"\n\n\n---------------\nSUCCESS: script completed! Mobile device records updated [{number_of_devices_updated}]\nERRORS: [{number_of_update_errors}]")
         logging.info(f"SCRIPT DURATION: {days} day(s) {hours} hour(s) {mins} minute(s) {secs} second(s)")
         print("[SCRIPT COMPLETE!]")
 
@@ -173,6 +173,7 @@ def update_device_record(all_serial_numbers):
     """First determine the mobile_device_ID by using Classic API to return XML of deviced based on serial number
     Second, use API patch call to update record"""
     device_update_count = 0
+    update_error_count = 0
     for sn in all_serial_numbers:
         logging.info(f"finding device record for {sn}")
         api_url = f"{jss}/JSSResource/mobiledevices/serialnumber/{sn}"
@@ -189,6 +190,7 @@ def update_device_record(all_serial_numbers):
         if response_validation == "404_continue":
             # use "continue" here to return to the top of the loop when an incorrect serial number is encountered
             logging.error(f"no Jamf object found for device with serial number [{sn}]")
+            update_error_count += 1
             continue
 
         # parse mobile device info to get mobile device ID
@@ -196,12 +198,25 @@ def update_device_record(all_serial_numbers):
         for a in root.findall('.//general'):
             mobile_device_id = getattr(a.find('id'), 'text', None)
 
-        asset_tag = all_serial_numbers[sn]
+        data = all_serial_numbers[sn]
+        asset_tag = data[0]
+        ea = data[1]
 
         """Now, make PATCH API call to update the device record"""
         logging.info(f"updating device record for {sn} with ID: {mobile_device_id} [asset tag: {asset_tag}]")
         api_url = f"{jss}/api/v2/mobile-devices/{mobile_device_id}"
-        payload = {"assetTag": asset_tag}
+        payload = {
+                    "updatedExtensionAttributes": [
+                        {
+                            "value": [
+                                ea
+                            ],
+                            "name": ea_name,
+                            "type": "STRING"
+                        }
+                    ],
+                    "assetTag": asset_tag
+                }
         headers = {
             'accept': 'application/json',
             'content-type': 'application/json; charset=utf-8',
@@ -212,7 +227,7 @@ def update_device_record(all_serial_numbers):
         check_token_expiration_time()
         requests.request("GET", api_url, headers=headers, data=payload)
         device_update_count += 1
-    return device_update_count
+    return device_update_count, update_error_count
 
 
 def configure_logging(timestamp, debug_or_std):
@@ -230,7 +245,8 @@ def convert_csv_to_dictionary(path_to_csv):
             split_line = csv_dict_without_line_breaks.split(", ")
             sn = split_line[0]
             atag = split_line[1]
-            row_to_append = {sn: atag}
+            ea = split_line[2]
+            row_to_append = {sn: [atag, ea]}
             all_data_from_csv.update(row_to_append)
             # all_data_from_csv[]
     print(all_data_from_csv)
@@ -239,12 +255,11 @@ def convert_csv_to_dictionary(path_to_csv):
 
 
 if __name__ == "__main__":
-    script_duration("start", 0)
+    script_duration("start", 0, 0)
     now_formatted = now_date_time()
-    jss, api_user, api_pw, main_path, log_folder_path, csv_path, debug_mode_tf, test_mode_tf, log_level = init_vars()
+    jss, api_user, api_pw, ea_name, main_path, log_folder_path, csv_path, log_level = init_vars()
     create_script_directory(14)
     api_token = generate_auth_token()
     serial_number_asset_tag_dict = convert_csv_to_dictionary(csv_path)
-    devices_updated_count = update_device_record(serial_number_asset_tag_dict)
-    script_duration("stop", devices_updated_count)
-
+    devices_updated_count, device_update_error_count = update_device_record(serial_number_asset_tag_dict)
+    script_duration("stop", devices_updated_count, device_update_error_count)
