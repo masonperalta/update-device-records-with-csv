@@ -244,6 +244,8 @@ def convert_csv_to_dictionary(path_to_csv):
         for row in read_csv_dict:
             sn = row[0]
             atag = row[1]
+            if atag is None:
+                atag = ""
             ea = row[2]
             row_to_append = {sn: [atag, ea]}
             all_data_from_csv.update(row_to_append)
@@ -261,4 +263,8 @@ if __name__ == "__main__":
     serial_number_asset_tag_dict = convert_csv_to_dictionary(csv_path)
     devices_updated_count, device_update_error_count = update_device_record(serial_number_asset_tag_dict)
     script_duration("stop", devices_updated_count, device_update_error_count)
+
+
+
+
 
