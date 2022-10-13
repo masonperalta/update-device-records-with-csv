@@ -1,3 +1,4 @@
+import csv
 import os
 import requests
 import sys
@@ -239,16 +240,14 @@ def configure_logging(timestamp, debug_or_std):
 def convert_csv_to_dictionary(path_to_csv):
     all_data_from_csv = {}
     with open(path_to_csv, "r", encoding='utf-8') as csv_dict:
-        for row in csv_dict:
-            csv_dict_without_line_breaks = row.rstrip('\n')
-            split_line = csv_dict_without_line_breaks.split(", ")
-            sn = split_line[0]
-            atag = split_line[1]
-            ea = split_line[2]
+        read_csv_dict = csv.reader(csv_dict, delimiter=',', quotechar='"')
+        for row in read_csv_dict:
+            sn = row[0]
+            atag = row[1]
+            ea = row[2]
             row_to_append = {sn: [atag, ea]}
             all_data_from_csv.update(row_to_append)
-            # all_data_from_csv[]
-    print(all_data_from_csv)
+    print(f"DATA READ FROM CSV: \n{all_data_from_csv}")
     csv_dict.close()
     return all_data_from_csv
 
@@ -262,3 +261,4 @@ if __name__ == "__main__":
     serial_number_asset_tag_dict = convert_csv_to_dictionary(csv_path)
     devices_updated_count, device_update_error_count = update_device_record(serial_number_asset_tag_dict)
     script_duration("stop", devices_updated_count, device_update_error_count)
+
